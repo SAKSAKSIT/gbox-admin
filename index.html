@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>G-BOX ADMIN</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+body{margin:0;background:#0b1020;color:#fff;font-family:Arial,sans-serif}
+.box{max-width:420px;margin:40px auto;padding:20px;background:#151c32;border-radius:16px}
+input,select,button{width:100%;padding:13px;margin-top:10px;box-sizing:border-box;border-radius:9px;font-size:15px}
+input,select{background:#0e1528;color:white;border:1px solid #354261}
+button{background:#5b5cf0;color:white;border:0;font-weight:bold}
+button:disabled{opacity:.5}
+.msg{margin-top:12px;padding:10px;border-radius:8px;white-space:pre-wrap}
+.ok{background:#123d2b}.err{background:#451f28}.info{background:#17294a}
+.key{margin-top:12px;padding:15px;background:#0c1324;border-radius:9px;font-size:20px;font-weight:bold;word-break:break-all}
+#admin{display:none}
+</style>
+</head>
+
+<body>
+<div class="box" id="loginBox">
+<h2>G-BOX ADMIN</h2>
+<p>เข้าสู่ระบบผู้ดูแล</p>
+
+<input id="email" type="email" placeholder="Email">
+<input id="password" type="password" placeholder="Password">
+
+<button id="loginBtn">เข้าสู่ระบบ</button>
+<div id="loginMsg"></div>
+</div>
+
+<div class="box" id="admin">
+<h2>G-BOX ADMIN</h2>
+<p id="user"></p>
+
+<select id="days">
+<option value="7">7 วัน</option>
+<option value="30">30 วัน</option>
+<option value="90">90 วัน</option>
+<option value="365">365 วัน</option>
+</select>
+
+<button id="createBtn">สร้าง License Key</button>
+<div id="createMsg"></div>
+<div id="key" class="key" style="display:none"></div>
+
+<button id="logoutBtn">ออกจากระบบ</button>
+</div>
+
+<script>
+const SUPABASE_URL="https://xtbmtusevantwzeyfpl.supabase.co";
+
+/*
+ใส่ Publishable Key ของคุณตรงนี้
+ต้องขึ้นต้นด้วย sb_publishable_
+*/
+const SUPABASE_PUBLISHABLE_KEY="sb_publishable_-Kci1ustsrVOLZez0VcHXA_vIXwofUw";
+
+const supabase=window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY
+);
+
+const $=id=>document.getElementById(id);
+
+function msg(el,text,type){
+  el.textContent=text;
+  el.className="msg "+type;
+}
+
+async function checkLogin(){
+  try{
+    const {data,error}=await supabase.auth.getSession();
+    if(error) throw error;
+
+    if(data.session){
+      $("loginBox").style.display="none";
+      $("admin").style.display="block";
+      $("user").textContent="บัญชี: "+data.session.user.email;
+    }
+  }catch(e){
+    msg($("loginMsg"),"ตรวจสอบการเข้าสู่ระบบไม่สำเร็จ\n"+e.message,"err");
+  }
+}
+
+$("loginBtn").onclick=async()=>{
+  const email=$("email").value.trim();
+  const password=$("password").value;
+
+  if(!email){
+    msg($("loginMsg"),"กรุณาใส่ Email","err");
+    return;
+  }
+
+  if(!password){
+    msg($("loginMsg"),"กรุณาใส่ Password","err");
+    return;
+  }
+
+  $("loginBtn").disabled=true;
+  $("loginBtn").textContent="กำลังเข้าสู่ระบบ...";
+  msg($("loginMsg"),"กำลังเชื่อมต่อ Supabase...","info");
+
+  try{
+    const result=await Promise.race([
+      supabase.auth.signInWithPassword({email,password}),
+      new Promise((_,reject)=>
+        setTimeout(()=>reject(new Error("เชื่อมต่อ Supabase ไม่สำเร็จภายใน 10 วินาที")),10000)
+      )
+    ]);
+
+    if(result.error) throw result.error;
+
+    msg($("loginMsg"),"เข้าสู่ระบบสำเร็จ","ok");
+    await checkLogin();
+
+  }catch(e){
+    msg($("loginMsg"),"ล็อกอินไม่สำเร็จ\n"+e.message,"err");
+  }
+
+  $("loginBtn").disabled=false;
+  $("loginBtn").textContent="เข้าสู่ระบบ";
+};
+
+$("createBtn").onclick=async()=>{
+  $("createBtn").disabled=true;
+  $("createBtn").textContent="กำลังสร้าง...";
+
+  try{
+    const days=Number($("days").value);
+
+    const result=await supabase.functions.invoke(
+      "create-license",
+      {body:{days}}
+    );
+
+    if(result.error) throw result.error;
+
+    if(!result.data || !result.data.success){
+      throw new Error(result.data?.message||"สร้างคีย์ไม่สำเร็จ");
+    }
+
+    $("key").textContent=result.data.license_key;
+    $("key").style.display="block";
+
+    msg(
+      $("createMsg"),
+      "สร้างคีย์สำเร็จ\nหมดอายุ: "+result.data.expires_at,
+      "ok"
+    );
+
+  }catch(e){
+    msg($("createMsg"),"สร้างคีย์ไม่สำเร็จ\n"+e.message,"err");
+  }
+
+  $("createBtn").disabled=false;
+  $("createBtn").textContent="สร้าง License Key";
+};
+
+$("logoutBtn").onclick=async()=>{
+  await supabase.auth.signOut();
+  location.reload();
+};
+
+checkLogin();
+</script>
+</body>
+  </html>
